@@ -84,9 +84,9 @@ class DataPreprocessor(object):
     """
 
     def __init__(self):
-      self.transformer = None
       self._resident_distance_regressor = None
       self._season_classifier = None
+      self._age_mapper = None
 
     def data_visualing(self, df):
         """
@@ -110,6 +110,9 @@ class DataPreprocessor(object):
         Returns:
         None
         """
+        # print age group uniqu
+        print(df['Age Group'].unique())
+
         # Create subplots
         fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 
@@ -187,6 +190,22 @@ class DataPreprocessor(object):
             df.loc[df[target_column].isnull(), target_column] = predicted_values
 
         return df
+    
+
+    def get_age_group_mapper(self):
+        # Define a mapping dictionary
+        age_group_mapping = {
+            'Middle Aged': 0,
+            'Adult': 1,
+            'Young Adult': 2,
+            'Senior': 3
+        }
+        
+        # Define a function for mapping age groups to numbers
+        def map_age_group(age_group):
+            return age_group_mapping.get(age_group, age_group)  # Return the mapped value or the original value if not found
+    
+        return map_age_group
         
         
     def fit(self, features, labels):
@@ -209,6 +228,7 @@ class DataPreprocessor(object):
         #create regressors for the missing values that we found that have correlation
         self._resident_distance_regressor = self.create_linear_regressor(features['Transportation expense'], features['Residence Distance'])
         self._season_classifier = self.create_SVM_classifier(features['Month'], features['Season'], kernel='rbf') # Utilizing a robust model due to the cyclic nature of months and seasons
+        self._age_mapper = self.get_age_group_mapper()
 
     def transform(self, df):
 
@@ -226,18 +246,27 @@ class DataPreprocessor(object):
         *** This method will be called exactly once during evaluation. See the main section for details ***
 
         """
+        transformed_df = df
+        # Apply the mapper function to the "Age Group" column
+        transformed_df['Age Group'] = transformed_df['Age Group'].map(self._age_mapper)
+
+        df_dummies = pd.get_dummies(transformed_df['Reason'], prefix='Reason')
+        # Concatenate the new dummy variables with the original DataFrame
+        transformed_df = pd.concat([transformed_df, df_dummies], axis=1)
+        transformed_df.drop('Reason', axis=1, inplace=True)
+        
         # Predict missing 'resident_distance' values using the trained regressor
-        df = self.fill_missing_values_regression(df, ['Transportation expense'], 'Residence Distance', self._resident_distance_regressor)
+        transformed_df = self.fill_missing_values_regression(transformed_df, ['Transportation expense'], 'Residence Distance', self._resident_distance_regressor)
 
-        df = self.fill_missing_values_classifier(df, ['Month'], 'Season', self._season_classifier)
+        transformed_df = self.fill_missing_values_classifier(transformed_df, ['Month'], 'Season', self._season_classifier)
 
-        print(df.info())
-        # df['Smoker'].fillna('Yes')
+        print(transformed_df.info())
+        transformed_df['Smoker'].fillna('Yes')
 
-        # df["BMI"]=df[16]/df[17]^2
+        # df["BMI"] = df['w'] / (df['h'] / 100) ** 2
         # # think about if you would like to add additional computed columns.
 
-        return df
+        return transformed_df
 
 
 def train_model(processed_X, y):
